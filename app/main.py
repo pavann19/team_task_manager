@@ -31,6 +31,8 @@ logger = logging.getLogger("app")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
+    logger.info("Ensuring database tables exist…")
+    Base.metadata.create_all(bind=engine)
     logger.info("Application started – %s v%s", settings.APP_NAME, settings.APP_VERSION)
     yield
     logger.info("Application shutting down …")
@@ -49,8 +51,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
