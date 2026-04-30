@@ -211,6 +211,9 @@ function showSection(name) {
       btn.className = s === name
         ? 'flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 ease-in-out bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-inner'
         : 'flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 ease-in-out text-gray-400 hover:text-white hover:bg-gray-800/80 border border-transparent hover:border-gray-700';
+      if (s === 'mytasks' && isAdmin()) {
+        btn.classList.add('hidden');
+      }
     }
   });
   if (name === 'projects') loadProjects();

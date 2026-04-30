@@ -104,7 +104,8 @@ class Task(Base):
     def is_overdue(self) -> bool:
         if not self.due_date or self.status == TaskStatus.COMPLETED:
             return False
-        return self.due_date < datetime.now(timezone.utc)
+        due = self.due_date if self.due_date.tzinfo else self.due_date.replace(tzinfo=timezone.utc)
+        return due < datetime.now(timezone.utc)
 
 
 class ActionLog(Base):

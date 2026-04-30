@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.db.models import User, Task, Project, UserRole, ActionLog
+from app.db.models import User, Task, Project, UserRole, ActionLog, TaskStatus
 from app.schemas.task import TaskCreate, TaskUpdate, TaskOut
 from app.schemas.common import APIResponse
 from app.api.deps import get_current_user, require_admin_role
