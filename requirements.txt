@@ -14,7 +14,8 @@ pydantic-settings
 email-validator  # Required for Pydantic EmailStr
 
 # Authentication & Security
-passlib[bcrypt]
+passlib
+bcrypt==4.0.1
 pyjwt
 slowapi
 python-multipart
