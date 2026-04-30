@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.db.models import User, Task, Project, UserRole
+from app.db.models import User, Task, Project, UserRole, ActionLog
 from app.schemas.task import TaskCreate, TaskUpdate, TaskOut
 from app.schemas.common import APIResponse
 from app.api.deps import get_current_user, require_admin_role
@@ -15,6 +15,27 @@ from app.api.deps import get_current_user, require_admin_role
 logger = logging.getLogger("app.tasks")
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
+
+# Valid status transitions
+VALID_TRANSITIONS = {
+    "Pending": ["In Progress"],
+    "In Progress": ["Completed"],
+    "Completed": [],
+}
+
+
+def task_to_out(task: Task) -> dict:
+    """Convert Task ORM object to TaskOut dict with assigned_to_username."""
+    data = TaskOut.model_validate(task).model_dump()
+    data["assigned_to_username"] = task.assignee.username if task.assignee else None
+    data["is_overdue"] = task.is_overdue
+    return data
+
+
+def log_action(db: Session, task_id: str, action: str, user_id: str):
+    """Record a lightweight action log entry."""
+    entry = ActionLog(task_id=task_id, action=action, user_id=user_id)
+    db.add(entry)
 
 
 @router.post("/", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
@@ -50,6 +71,9 @@ def create_task(
         due_date=payload.due_date,
     )
     db.add(task)
+    db.flush()
+
+    log_action(db, task.id, "Task created", admin.id)
     db.commit()
     db.refresh(task)
 
@@ -58,7 +82,29 @@ def create_task(
     return APIResponse(
         success=True,
         message="Task created successfully",
-        data=TaskOut.model_validate(task).model_dump(),
+        data=task_to_out(task),
+    )
+
+
+@router.get("/my", response_model=APIResponse)
+def my_tasks(
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return only tasks assigned to the current user."""
+    tasks = (
+        db.query(Task)
+        .filter(Task.assigned_to_id == current_user.id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return APIResponse(
+        success=True,
+        message="My tasks retrieved",
+        data=[task_to_out(t) for t in tasks],
     )
 
 
@@ -78,7 +124,7 @@ def list_tasks(
     return APIResponse(
         success=True,
         message="Tasks retrieved",
-        data=[TaskOut.model_validate(t).model_dump() for t in tasks],
+        data=[task_to_out(t) for t in tasks],
     )
 
 
@@ -98,7 +144,7 @@ def get_task(
     return APIResponse(
         success=True,
         message="Task retrieved",
-        data=TaskOut.model_validate(task).model_dump(),
+        data=task_to_out(task),
     )
 
 
@@ -113,6 +159,7 @@ def update_task(
     Update a task.
     - Admin can update any task field.
     - Members can only update tasks assigned to them (status only).
+    - Status transitions are enforced.
     """
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -139,6 +186,17 @@ def update_task(
                 detail="Members can only update the task status",
             )
 
+    # Status transition validation
+    if payload.status is not None:
+        current_status = task.status.value
+        new_status = payload.status.value
+        allowed = VALID_TRANSITIONS.get(current_status, [])
+        if new_status != current_status and new_status not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status transition: {current_status} → {new_status}",
+            )
+
     # Validate assignee if provided
     if payload.assigned_to_id is not None:
         assignee = db.query(User).filter(User.id == payload.assigned_to_id).first()
@@ -150,10 +208,16 @@ def update_task(
 
     # Apply updates
     update_data = payload.model_dump(exclude_unset=True)
+    old_status = task.status.value
     for field, value in update_data.items():
         setattr(task, field, value)
 
     task.updated_at = datetime.now(timezone.utc)
+
+    # Log status change
+    if payload.status and payload.status.value != old_status:
+        log_action(db, task.id, f"Status: {old_status} → {payload.status.value}", current_user.id)
+
     db.commit()
     db.refresh(task)
 
@@ -162,5 +226,5 @@ def update_task(
     return APIResponse(
         success=True,
         message="Task updated successfully",
-        data=TaskOut.model_validate(task).model_dump(),
+        data=task_to_out(task),
     )

@@ -1,4 +1,4 @@
-"""Authentication routes: register, login, me."""
+"""Authentication routes: register, login, me, users list."""
 
 import logging
 
@@ -21,13 +21,16 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @router.post("/register", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: UserRegister, db: Session = Depends(get_db)):
     """Register a new user."""
+    # Normalize email
+    normalized_email = payload.email.strip().lower()
+
     # Check duplicates
     if db.query(User).filter(User.username == payload.username).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already taken",
         )
-    if db.query(User).filter(User.email == payload.email).first():
+    if db.query(User).filter(User.email == normalized_email).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
@@ -35,7 +38,7 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
 
     user = User(
         username=payload.username,
-        email=payload.email,
+        email=normalized_email,
         hashed_password=hash_password(payload.password),
         role=payload.role,
     )
@@ -84,4 +87,18 @@ def get_me(current_user: User = Depends(get_current_user)):
         success=True,
         message="Current user retrieved",
         data=user_out.model_dump(),
+    )
+
+
+@router.get("/users", response_model=APIResponse)
+def list_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all users (for task assignment dropdown)."""
+    users = db.query(User).all()
+    return APIResponse(
+        success=True,
+        message="Users retrieved",
+        data=[UserOut.model_validate(u).model_dump() for u in users],
     )

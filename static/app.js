@@ -1,6 +1,6 @@
 /**
- * Team Task Manager – Frontend Application v3
- * Upgrades: Analytics dashboard, priority/due_date fields, overdue highlighting, UI/UX premium polish.
+ * Team Task Manager – Frontend Application v4
+ * Upgrades: User assignment dropdown, My Tasks, status transitions, overdue badges, action logging.
  */
 
 const API = '/api/v1';
@@ -9,6 +9,7 @@ const API = '/api/v1';
 let token       = localStorage.getItem('ttm_token') || null;
 let currentUser = JSON.parse(localStorage.getItem('ttm_user') || 'null');
 let activeRequests = 0;
+let allUsers = [];
 
 // ──────────────── Core Helpers ────────────────
 
@@ -16,7 +17,6 @@ function showLoader() {
   if (activeRequests++ === 0) {
     const loader = document.getElementById('global-loader');
     loader.classList.remove('hidden');
-    // small timeout to allow display block to apply before opacity fade in
     setTimeout(() => { loader.style.opacity = '1'; }, 10);
   }
 }
@@ -76,11 +76,6 @@ function formatDate(iso) {
 function toInputDate(iso) {
   if (!iso) return '';
   return new Date(iso).toISOString().slice(0, 10);
-}
-
-function isOverdue(task) {
-  if (!task.due_date || task.status === 'Completed') return false;
-  return new Date(task.due_date) < new Date();
 }
 
 function statusClass(s) {
@@ -174,22 +169,44 @@ async function enterDashboard() {
     document.getElementById(id).classList.toggle('hidden', !isAdmin());
   });
 
+  // Show My Tasks tab for all users
+  document.getElementById('sec-btn-mytasks').classList.remove('hidden');
+
+  await loadUsers();
   showSection('projects');
   await loadProjects();
-
   if (isAdmin()) await loadAnalytics();
 }
 
+async function loadUsers() {
+  try {
+    const res = await api('/auth/users');
+    allUsers = res.data || [];
+    populateUserSelects();
+  } catch (_) {}
+}
+
+function populateUserSelects() {
+  const sel = document.getElementById('task-assignee');
+  sel.innerHTML = '<option value="">Unassigned</option>';
+  allUsers.forEach(u => {
+    sel.innerHTML += `<option value="${u.id}">${esc(u.username)} (${u.role})</option>`;
+  });
+}
+
 function showSection(name) {
-  ['projects', 'tasks'].forEach(s => {
+  ['projects', 'tasks', 'mytasks'].forEach(s => {
     document.getElementById(`section-${s}`).classList.toggle('hidden', s !== name);
     const btn = document.getElementById(`sec-btn-${s}`);
-    btn.className = s === name
-      ? 'flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 ease-in-out bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-inner'
-      : 'flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 ease-in-out text-gray-400 hover:text-white hover:bg-gray-800/80 border border-transparent hover:border-gray-700';
+    if (btn) {
+      btn.className = s === name
+        ? 'flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 ease-in-out bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-inner'
+        : 'flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 ease-in-out text-gray-400 hover:text-white hover:bg-gray-800/80 border border-transparent hover:border-gray-700';
+    }
   });
   if (name === 'projects') loadProjects();
   if (name === 'tasks')    loadTasks();
+  if (name === 'mytasks')  loadMyTasks();
 }
 
 // ──────────────── Analytics ────────────────
@@ -276,6 +293,59 @@ function filterTasksByProject(projectId) {
   showSection('tasks');
 }
 
+// ──────────────── Task Card Renderer ────────────────
+
+function renderTaskCard(t, showUpdateBtn = true) {
+  const canUpdate  = showUpdateBtn && (isAdmin() || t.assigned_to_id === currentUser.id);
+  const overdue    = t.is_overdue;
+  const overdueCard = overdue ? 'task-overdue border-red-500/50' : 'border-white/10 hover:border-indigo-500/30';
+
+  return `
+    <div class="bg-white/5 backdrop-blur-md border rounded-2xl p-6 transition-all duration-300 ease-in-out hover:scale-[1.02] hover:shadow-xl hover:shadow-indigo-500/10 fade-in flex flex-col ${overdueCard}">
+      <div class="flex-1">
+        <div class="flex items-start justify-between gap-2 mb-3">
+          <h3 class="font-bold text-white text-lg line-clamp-1 pr-2" title="${esc(t.title)}">${esc(t.title)}</h3>
+          ${canUpdate ? `
+            <button onclick='openUpdateModal(${JSON.stringify(t).replace(/'/g, "\\\\'").replace(/\//g, "\\/")})'
+                    class="bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white p-2 rounded-lg transition-colors duration-300 border border-white/5 shadow-sm" aria-label="Edit Task">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+            </button>
+          ` : ''}
+        </div>
+        
+        <div class="flex flex-wrap items-center gap-2 mb-4">
+          <span class="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${statusClass(t.status)}">${t.status}</span>
+          <span class="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${priorityClass(t.priority)}">${t.priority}</span>
+          ${overdue ? '<span class="overdue-badge shadow-sm shadow-red-500/20">⚠ Overdue</span>' : ''}
+        </div>
+        
+        <p class="text-sm text-gray-400 mb-5 line-clamp-2">${esc(t.description || 'No description provided.')}</p>
+      </div>
+      
+      <div class="border-t border-gray-800 pt-4 mt-auto">
+        <div class="grid grid-cols-2 gap-y-3 gap-x-2 text-[11px] text-gray-500 font-medium">
+          <div class="flex flex-col gap-1">
+            <span class="text-gray-600 uppercase tracking-wider text-[9px] font-bold">Assigned to</span>
+            <span class="text-gray-400 truncate">${t.assigned_to_username ? esc(t.assigned_to_username) : '<span class=&quot;text-gray-600 italic&quot;>Unassigned</span>'}</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-gray-600 uppercase tracking-wider text-[9px] font-bold">Due Date</span>
+            <span class="${overdue ? 'text-red-400 font-bold' : 'text-gray-400'}">${formatDate(t.due_date)}</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-gray-600 uppercase tracking-wider text-[9px] font-bold">Project ID</span>
+            <span class="text-gray-400 font-mono truncate bg-gray-900/50 px-2 py-0.5 rounded w-fit">${t.project_id.slice(0,8)}</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-gray-600 uppercase tracking-wider text-[9px] font-bold">Updated</span>
+            <span class="text-gray-400">${formatDate(t.updated_at)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // ──────────────── Tasks ────────────────
 
 async function loadTasks() {
@@ -293,70 +363,45 @@ async function loadTasks() {
       return;
     }
     noEl.classList.add('hidden');
-
-    container.innerHTML = tasks.map(t => {
-      const canUpdate  = isAdmin() || t.assigned_to_id === currentUser.id;
-      const overdue    = isOverdue(t);
-      const overdueCard = overdue ? 'task-overdue border-red-500/50' : 'border-white/10 hover:border-indigo-500/30';
-
-      return `
-        <div class="bg-white/5 backdrop-blur-md border rounded-2xl p-6 transition-all duration-300 ease-in-out hover:scale-[1.02] hover:shadow-xl hover:shadow-indigo-500/10 fade-in flex flex-col ${overdueCard}">
-          <div class="flex-1">
-            <div class="flex items-start justify-between gap-2 mb-3">
-              <h3 class="font-bold text-white text-lg line-clamp-1 pr-2" title="${esc(t.title)}">${esc(t.title)}</h3>
-              ${canUpdate ? `
-                <button onclick='openUpdateModal(${JSON.stringify(t).replace(/'/g, "\\'").replace(/\//g, "\\/")})'
-                        class="bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white p-2 rounded-lg transition-colors duration-300 border border-white/5 shadow-sm" aria-label="Edit Task">
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                </button>
-              ` : ''}
-            </div>
-            
-            <div class="flex flex-wrap items-center gap-2 mb-4">
-              <span class="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${statusClass(t.status)}">${t.status}</span>
-              <span class="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${priorityClass(t.priority)}">${t.priority}</span>
-              ${overdue ? '<span class="overdue-badge shadow-sm shadow-red-500/20">⚠ Overdue</span>' : ''}
-            </div>
-            
-            <p class="text-sm text-gray-400 mb-5 line-clamp-2">${esc(t.description || 'No description provided.')}</p>
-          </div>
-          
-          <div class="border-t border-gray-800 pt-4 mt-auto">
-            <div class="grid grid-cols-2 gap-y-3 gap-x-2 text-[11px] text-gray-500 font-medium">
-              <div class="flex flex-col gap-1">
-                <span class="text-gray-600 uppercase tracking-wider text-[9px] font-bold">Project ID</span>
-                <span class="text-gray-400 font-mono truncate bg-gray-900/50 px-2 py-0.5 rounded w-fit">${t.project_id.slice(0,8)}</span>
-              </div>
-              <div class="flex flex-col gap-1">
-                <span class="text-gray-600 uppercase tracking-wider text-[9px] font-bold">Assignee</span>
-                <span class="text-gray-400 truncate">${t.assigned_to_id ? t.assigned_to_id.slice(0,8) : 'Unassigned'}</span>
-              </div>
-              <div class="flex flex-col gap-1">
-                <span class="text-gray-600 uppercase tracking-wider text-[9px] font-bold">Due Date</span>
-                <span class="${overdue ? 'text-red-400 font-bold' : 'text-gray-400'}">${formatDate(t.due_date)}</span>
-              </div>
-              <div class="flex flex-col gap-1">
-                <span class="text-gray-600 uppercase tracking-wider text-[9px] font-bold">Updated</span>
-                <span class="text-gray-400">${formatDate(t.updated_at)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
+    container.innerHTML = tasks.map(t => renderTaskCard(t)).join('');
   } catch (_) {}
 }
+
+// ──────────────── My Tasks ────────────────
+
+async function loadMyTasks() {
+  try {
+    const res   = await api('/tasks/my?limit=100');
+    const tasks = res.data || [];
+    const container = document.getElementById('mytask-list');
+    const noEl      = document.getElementById('no-mytasks');
+
+    if (tasks.length === 0) {
+      container.innerHTML = '';
+      noEl.classList.remove('hidden');
+      return;
+    }
+    noEl.classList.add('hidden');
+    container.innerHTML = tasks.map(t => renderTaskCard(t)).join('');
+  } catch (_) {}
+}
+
+// ──────────────── Create Task ────────────────
 
 async function handleCreateTask(e) {
   e.preventDefault();
   const dueDateVal = document.getElementById('task-due-date').value;
+  if (!dueDateVal) {
+    showToast('Due date is required', 'error');
+    return;
+  }
   const payload = {
     title:          document.getElementById('task-title').value.trim(),
     project_id:     document.getElementById('task-project').value,
     description:    document.getElementById('task-desc').value.trim(),
     assigned_to_id: document.getElementById('task-assignee').value || null,
-    priority:       document.getElementById('task-priority').value,
-    due_date:       dueDateVal ? new Date(dueDateVal).toISOString() : null,
+    priority:       document.getElementById('task-priority').value || null,
+    due_date:       new Date(dueDateVal).toISOString(),
   };
   try {
     await api('/tasks/', { method: 'POST', body: JSON.stringify(payload) });
@@ -373,15 +418,23 @@ function openUpdateModal(task) {
   const modal = document.getElementById('update-modal');
   modal.classList.remove('hidden');
   
-  // Quick animation hack to reset slide-up
   const dialog = modal.querySelector('.slide-up');
   dialog.style.animation = 'none';
-  dialog.offsetHeight; /* trigger reflow */
+  dialog.offsetHeight;
   dialog.style.animation = null;
 
   document.getElementById('update-task-id').value     = task.id;
   document.getElementById('modal-task-title').textContent = task.title;
   document.getElementById('update-status').value      = task.status;
+
+  // Show valid transition hint
+  const statusHint = document.getElementById('status-transition-hint');
+  const transitions = {
+    'Pending': 'Pending → In Progress',
+    'In Progress': 'In Progress → Completed',
+    'Completed': 'No further transitions allowed',
+  };
+  statusHint.textContent = transitions[task.status] || '';
 
   const adminFields = document.getElementById('admin-update-fields');
   if (isAdmin()) {
@@ -420,6 +473,7 @@ async function handleUpdateTask(e) {
     showToast('Task updated successfully!');
     closeModal();
     await loadTasks();
+    await loadMyTasks();
     if (isAdmin()) await loadAnalytics();
   } catch (_) {}
 }
@@ -428,7 +482,6 @@ async function handleUpdateTask(e) {
 
 (function init() {
   if (token && currentUser) {
-    // We do NOT use api() here directly because we don't want the global loader flashing on initial page load
     fetch(`${API}/auth/me`, { headers: headers() })
       .then(r => r.ok ? enterDashboard() : handleLogout())
       .catch(() => handleLogout());
@@ -440,5 +493,5 @@ Object.assign(window, {
   switchAuthTab, handleLogin, handleRegister, handleLogout,
   showSection, handleCreateProject, handleCreateTask,
   handleUpdateTask, openUpdateModal, closeModal,
-  filterTasksByProject, loadTasks, loadAnalytics,
+  filterTasksByProject, loadTasks, loadMyTasks, loadAnalytics,
 });

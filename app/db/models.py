@@ -11,8 +11,10 @@ from sqlalchemy import (
     ForeignKey,
     Enum as SAEnum,
     Text,
+    Boolean,
 )
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_property
 
 from app.db.session import Base
 
@@ -96,3 +98,19 @@ class Task(Base):
     # Relationships
     project = relationship("Project", back_populates="tasks", lazy="selectin")
     assignee = relationship("User", back_populates="assigned_tasks", foreign_keys=[assigned_to_id], lazy="selectin")
+
+    @hybrid_property
+    def is_overdue(self) -> bool:
+        if not self.due_date or self.status == TaskStatus.COMPLETED:
+            return False
+        return self.due_date < datetime.now(timezone.utc)
+
+
+class ActionLog(Base):
+    __tablename__ = "action_logs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=False)
+    action = Column(String(100), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    timestamp = Column(DateTime(timezone=True), default=utcnow)

@@ -211,6 +211,10 @@
                 class="flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 ease-in-out text-gray-400 hover:text-white hover:bg-gray-800/80 border border-transparent hover:border-gray-700 hover:scale-105">
           ✅ Tasks
         </button>
+        <button onclick="showSection('mytasks')" id="sec-btn-mytasks"
+                class="hidden flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 ease-in-out text-gray-400 hover:text-white hover:bg-gray-800/80 border border-transparent hover:border-gray-700 hover:scale-105">
+          👤 My Tasks
+        </button>
       </div>
 
       <!-- ===== PROJECTS SECTION ===== -->
@@ -274,7 +278,16 @@
 
         <div id="task-list" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5"></div>
         <div id="no-tasks" class="hidden text-center bg-white/5 border border-white/5 rounded-2xl py-16 px-4">
-          <p class="text-gray-400 text-lg font-medium">No tasks found. Time to relax.</p>
+          <p class="text-gray-400 text-lg font-medium">No tasks available. Create one to get started.</p>
+        </div>
+      </section>
+
+      <!-- ===== MY TASKS SECTION ===== -->
+      <section id="section-mytasks" class="hidden fade-in">
+        <h2 class="text-xl font-bold mb-6 flex items-center gap-2"><span class="text-indigo-400">👤</span> My Assigned Tasks</h2>
+        <div id="mytask-list" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5"></div>
+        <div id="no-mytasks" class="hidden text-center bg-white/5 border border-white/5 rounded-2xl py-16 px-4">
+          <p class="text-gray-400 text-lg font-medium">No tasks assigned to you yet.</p>
         </div>
       </section>
 
@@ -304,6 +317,7 @@
             <option value="In Progress">In Progress</option>
             <option value="Completed">Completed</option>
           </select>
+          <p id="status-transition-hint" class="text-xs text-gray-500 mt-2 italic"></p>
         </div>
 
         <!-- Admin-only fields -->
