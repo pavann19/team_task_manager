@@ -92,6 +92,7 @@ class Task(Base):
     due_date = Column(DateTime(timezone=True), nullable=True)
     project_id = Column(String(36), ForeignKey("projects.id"), nullable=False)
     assigned_to_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    needs_admin_approval = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

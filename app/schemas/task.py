@@ -53,6 +53,7 @@ class TaskOut(BaseModel):
     assigned_to_id: Optional[str]
     assigned_to_username: Optional[str] = None
     is_overdue: bool = False
+    needs_admin_approval: bool = False
     created_at: datetime
     updated_at: Optional[datetime]
 

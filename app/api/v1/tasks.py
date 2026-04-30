@@ -20,7 +20,7 @@ router = APIRouter(prefix="/tasks", tags=["Tasks"])
 VALID_TRANSITIONS = {
     "Pending": ["In Progress"],
     "In Progress": ["Completed"],
-    "Completed": [],
+    "Completed": ["In Progress"],
 }
 
 
@@ -187,15 +187,34 @@ def update_task(
             )
 
     # Status transition validation
+    status_changed = False
+    new_status_val = None
     if payload.status is not None:
         current_status = task.status.value
         new_status = payload.status.value
         allowed = VALID_TRANSITIONS.get(current_status, [])
-        if new_status != current_status and new_status not in allowed:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid status transition: {current_status} → {new_status}",
-            )
+        
+        # Intercept Member Completion
+        if current_user.role != UserRole.ADMIN and new_status == TaskStatus.COMPLETED.value:
+            task.needs_admin_approval = True
+            payload.status = None  # Prevent status change
+        else:
+            if new_status != current_status and new_status not in allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid status transition: {current_status} → {new_status}",
+                )
+            
+            if new_status != current_status:
+                status_changed = True
+                new_status_val = new_status
+            
+            # If Admin approves, clear flag
+            if current_user.role == UserRole.ADMIN and new_status == TaskStatus.COMPLETED.value:
+                task.needs_admin_approval = False
+            # If status reverts to anything else, clear flag
+            if new_status != TaskStatus.COMPLETED.value:
+                task.needs_admin_approval = False
 
     # Validate assignee if provided
     if payload.assigned_to_id is not None:
@@ -215,8 +234,11 @@ def update_task(
     task.updated_at = datetime.now(timezone.utc)
 
     # Log status change
-    if payload.status and payload.status.value != old_status:
-        log_action(db, task.id, f"Status: {old_status} → {payload.status.value}", current_user.id)
+    if status_changed:
+        log_action(db, task.id, f"Status: {old_status} → {new_status_val}", current_user.id)
+    elif task.needs_admin_approval and payload.status is None and "status" in payload.model_dump(exclude_unset=True):
+        # We intercepted the status change
+        log_action(db, task.id, "Requested Completion Approval", current_user.id)
 
     db.commit()
     db.refresh(task)

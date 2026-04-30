@@ -96,6 +96,15 @@ function esc(str) {
   return div.innerHTML;
 }
 
+function togglePassword(inputId) {
+  const input = document.getElementById(inputId);
+  if (input.type === 'password') {
+    input.type = 'text';
+  } else {
+    input.type = 'password';
+  }
+}
+
 // ──────────────── Auth ────────────────
 
 function switchAuthTab(tab) {
@@ -169,8 +178,8 @@ async function enterDashboard() {
     document.getElementById(id).classList.toggle('hidden', !isAdmin());
   });
 
-  // Show My Tasks tab for all users
-  document.getElementById('sec-btn-mytasks').classList.remove('hidden');
+  // Hide My Tasks tab for Admins
+  document.getElementById('sec-btn-mytasks').classList.toggle('hidden', isAdmin());
 
   await loadUsers();
   showSection('projects');
@@ -298,10 +307,14 @@ function filterTasksByProject(projectId) {
 function renderTaskCard(t, showUpdateBtn = true) {
   const canUpdate  = showUpdateBtn && (isAdmin() || t.assigned_to_id === currentUser.id);
   const overdue    = t.is_overdue;
-  const overdueCard = overdue ? 'task-overdue border-red-500/50' : 'border-white/10 hover:border-indigo-500/30';
+  const needsApproval = t.needs_admin_approval;
+  
+  let cardBorder = 'border-white/10 hover:border-indigo-500/30';
+  if (needsApproval) cardBorder = 'border-yellow-500/50 task-pending-approval';
+  else if (overdue) cardBorder = 'task-overdue border-red-500/50';
 
   return `
-    <div class="bg-white/5 backdrop-blur-md border rounded-2xl p-6 transition-all duration-300 ease-in-out hover:scale-[1.02] hover:shadow-xl hover:shadow-indigo-500/10 fade-in flex flex-col ${overdueCard}">
+    <div class="bg-white/5 backdrop-blur-md border rounded-2xl p-6 transition-all duration-300 ease-in-out hover:scale-[1.02] hover:shadow-xl hover:shadow-indigo-500/10 fade-in flex flex-col ${cardBorder}">
       <div class="flex-1">
         <div class="flex items-start justify-between gap-2 mb-3">
           <h3 class="font-bold text-white text-lg line-clamp-1 pr-2" title="${esc(t.title)}">${esc(t.title)}</h3>
@@ -316,7 +329,8 @@ function renderTaskCard(t, showUpdateBtn = true) {
         <div class="flex flex-wrap items-center gap-2 mb-4">
           <span class="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${statusClass(t.status)}">${t.status}</span>
           <span class="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${priorityClass(t.priority)}">${t.priority}</span>
-          ${overdue ? '<span class="overdue-badge shadow-sm shadow-red-500/20">⚠ Overdue</span>' : ''}
+          ${overdue && !needsApproval ? '<span class="overdue-badge shadow-sm shadow-red-500/20 text-[10px] px-2 py-1 rounded-full font-bold bg-red-500/20 text-red-300">⚠ Overdue</span>' : ''}
+          ${needsApproval ? '<span class="shadow-sm shadow-yellow-500/20 text-[10px] px-2 py-1 rounded-full font-bold bg-yellow-500/20 text-yellow-300">⏳ Pending Approval</span>' : ''}
         </div>
         
         <p class="text-sm text-gray-400 mb-5 line-clamp-2">${esc(t.description || 'No description provided.')}</p>
@@ -437,14 +451,33 @@ function openUpdateModal(task) {
   statusHint.textContent = transitions[task.status] || '';
 
   const adminFields = document.getElementById('admin-update-fields');
+  const approvalHint = document.getElementById('approval-hint');
+  
+  if (approvalHint) approvalHint.remove();
+
   if (isAdmin()) {
     adminFields.classList.remove('hidden');
     document.getElementById('update-title').value    = task.title;
     document.getElementById('update-desc').value     = task.description || '';
     document.getElementById('update-priority').value = task.priority || 'Medium';
     document.getElementById('update-due-date').value = toInputDate(task.due_date);
+    
+    if (task.needs_admin_approval) {
+      statusHint.textContent = "User has requested to complete this task. Change status to 'Completed' to approve.";
+      statusHint.className = "text-xs text-yellow-500 mt-2 font-semibold";
+    } else {
+      statusHint.className = "text-xs text-gray-500 mt-2 italic";
+    }
   } else {
     adminFields.classList.add('hidden');
+    statusHint.className = "text-xs text-gray-500 mt-2 italic";
+    if (task.status !== 'Completed') {
+       const hintMsg = document.createElement('p');
+       hintMsg.id = 'approval-hint';
+       hintMsg.className = "text-xs text-indigo-400 mt-2";
+       hintMsg.textContent = "Setting status to Completed will submit it for Admin approval.";
+       statusHint.parentNode.insertBefore(hintMsg, statusHint.nextSibling);
+    }
   }
 }
 
@@ -493,5 +526,5 @@ Object.assign(window, {
   switchAuthTab, handleLogin, handleRegister, handleLogout,
   showSection, handleCreateProject, handleCreateTask,
   handleUpdateTask, openUpdateModal, closeModal,
-  filterTasksByProject, loadTasks, loadMyTasks, loadAnalytics,
+  filterTasksByProject, loadTasks, loadMyTasks, loadAnalytics, togglePassword
 });
