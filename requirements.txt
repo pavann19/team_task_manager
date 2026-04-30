@@ -1,12 +1,25 @@
-﻿fastapi
-uvicorn
+# Web Framework & Server
+fastapi
+uvicorn[standard]
+gunicorn
+
+# Database & ORM
 sqlalchemy
+alembic
+psycopg2-binary  # Required for PostgreSQL (Railway)
+
+# Data Validation & Settings
 pydantic
-python-dotenv
+pydantic-settings
+email-validator  # Required for Pydantic EmailStr
+
+# Authentication & Security
 passlib[bcrypt]
 pyjwt
-psycopg2-binary
-alembic
-python-multipart
-pydantic-settings
 slowapi
+python-multipart
+
+# Utilities
+python-dotenv
+httpx  # Optional: For testing
+pytest # Optional: For testing
