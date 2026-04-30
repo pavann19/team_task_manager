@@ -33,6 +33,20 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     logger.info("Ensuring database tables exist…")
     Base.metadata.create_all(bind=engine)
+
+    # --- Auto-migrate: add missing columns to existing tables ---
+    from sqlalchemy import text, inspect
+    with engine.connect() as conn:
+        inspector = inspect(engine)
+        existing_cols = [c["name"] for c in inspector.get_columns("tasks")]
+        if "needs_admin_approval" not in existing_cols:
+            logger.info("Adding missing column 'needs_admin_approval' to tasks table…")
+            conn.execute(text(
+                "ALTER TABLE tasks ADD COLUMN needs_admin_approval BOOLEAN DEFAULT FALSE NOT NULL"
+            ))
+            conn.commit()
+            logger.info("Column 'needs_admin_approval' added successfully.")
+
     logger.info("Application started – %s v%s", settings.APP_NAME, settings.APP_VERSION)
     yield
     logger.info("Application shutting down …")
